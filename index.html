@@ -1,212 +1,236 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>1Notes</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1Notes</title>
 
-  <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #fff;
-    }
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #fff;
+}
 
-    #app {
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
-    }
+/* ===== Screens ===== */
+.screen {
+  display: none;
+}
+.screen.active {
+  display: block;
+}
 
-    #notesList {
-      width: 35%;
-      border-right: 1px solid #ddd;
-      overflow-y: auto;
-    }
+/* ===== Notes List ===== */
+#notesList {
+  padding: 16px;
+}
+.note-item {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+}
+.note-item strong {
+  display: block;
+}
+.new-note {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  font-size: 28px;
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+}
 
-    #notesList div {
-      padding: 14px;
-      border-bottom: 1px solid #eee;
-      cursor: pointer;
-    }
+/* ===== Editor ===== */
+#editor {
+  padding: 16px;
+  padding-bottom: 90px;
+}
 
-    #editor {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
+.line {
+  outline: none;
+  margin: 4px 0;
+  line-height: 1.35;
+}
 
-    #noteContent {
-      flex: 1;
-      padding: 16px;
-      overflow-y: auto;
-      outline: none;
-    }
+.normal { font-size: 18px; }
+.title { font-size: 28px; font-weight: 700; }
+.subtitle { font-size: 22px; font-weight: 600; }
 
-    .line {
-      min-height: 22px;
-      outline: none;
-      white-space: pre-wrap;
-    }
+/* ===== Toolbar ===== */
+.toolbar {
+  position: fixed;
+  left: 0;
+  width: 100%;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: #f2f2f2;
+  border-top: 1px solid #ddd;
+}
 
-    #toolbar {
-      display: flex;
-      gap: 10px;
-      padding: 10px;
-      border-top: 1px solid #ddd;
-      background: #f9f9f9;
-      position: fixed;
-      left: 35%;
-      right: 0;
-      bottom: 0;
-    }
+.toolbar button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+}
 
-    button {
-      font-size: 16px;
-    }
-  </style>
+/* Checkbox */
+.checkbox {
+  cursor: pointer;
+  user-select: none;
+}
+</style>
 </head>
 
 <body>
-  <div id="app">
-    <div id="notesList"></div>
 
-    <div id="editor">
-      <div id="noteContent"></div>
-    </div>
+<!-- NOTES LIST -->
+<div id="listScreen" class="screen active">
+  <div id="notesList"></div>
+  <button class="new-note" onclick="createNote()">＋</button>
+</div>
+
+<!-- EDITOR -->
+<div id="editorScreen" class="screen">
+  <div id="editor"></div>
+
+  <div class="toolbar" id="toolbar">
+    <button onclick="setStyle('title')">Title</button>
+    <button onclick="setStyle('subtitle')">Subtitle</button>
+    <button onclick="setStyle('normal')">Text</button>
+    <button onclick="document.execCommand('bold')"><b>B</b></button>
+    <button onclick="document.execCommand('italic')"><i>I</i></button>
+    <button onclick="document.execCommand('underline')"><u>U</u></button>
+    <button onclick="insertCheckbox()">☐</button>
   </div>
+</div>
 
-  <div id="toolbar">
-    <button id="newLine">New Line</button>
-    <button id="checkbox">☐</button>
-  </div>
+<script>
+/* ===== Storage ===== */
+let notes = JSON.parse(localStorage.getItem("notes") || "[]");
+let currentNote = null;
+const notesList = document.getElementById("notesList");
+const editor = document.getElementById("editor");
 
-  <script>
-    const notesList = document.getElementById("notesList");
-    const noteContent = document.getElementById("noteContent");
-    const toolbar = document.getElementById("toolbar");
+/* ===== Navigation ===== */
+function show(screen) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById(screen).classList.add("active");
+}
 
-    let notes = JSON.parse(localStorage.getItem("notes") || "[]");
-    let currentIndex = null;
+/* ===== Notes List ===== */
+function renderList() {
+  notesList.innerHTML = "";
+  notes.forEach((n, i) => {
+    const div = document.createElement("div");
+    div.className = "note-item";
+    div.innerHTML = `<strong>${n.preview || "New Note"}</strong>`;
+    div.onclick = () => openNote(i);
+    notesList.appendChild(div);
+  });
+}
+renderList();
 
-    function save() {
-      localStorage.setItem("notes", JSON.stringify(notes));
-    }
+/* ===== Create / Open ===== */
+function createNote() {
+  const note = { content: "", preview: "" };
+  notes.unshift(note);
+  save();
+  openNote(0);
+}
 
-    function renderList() {
-      notesList.innerHTML = "";
-      notes.forEach((note, i) => {
-        const div = document.createElement("div");
-        div.textContent = note.lines.join(" ").slice(0, 40) || "New Note";
-        div.onclick = () => openNote(i);
-        notesList.appendChild(div);
-      });
-    }
+function openNote(index) {
+  currentNote = index;
+  editor.innerHTML = "";
+  if (notes[index].content) {
+    editor.innerHTML = notes[index].content;
+    rebindLines();
+  } else {
+    createLine();
+  }
+  show("editorScreen");
+}
 
-    function openNote(i) {
-      currentIndex = i;
-      noteContent.innerHTML = "";
-      notes[i].lines.forEach(text => createLine(text));
-    }
+/* ===== Editor Lines ===== */
+function createLine(type="normal") {
+  const div = document.createElement("div");
+  div.className = `line ${type}`;
+  div.contentEditable = true;
+  editor.appendChild(div);
+  placeCaret(div);
 
-    function createLine(text = "") {
-      const div = document.createElement("div");
-      div.className = "line";
-      div.contentEditable = true;
-      div.textContent = text;
-
-      // ✅ FIXED checkbox behavior
-      div.addEventListener("click", (e) => {
-        const t = div.textContent;
-        if (
-          e.offsetX < 24 &&
-          (t.startsWith("☐ ") || t.startsWith("☑ "))
-        ) {
-          e.preventDefault();
-          div.textContent =
-            (t.startsWith("☑ ") ? "☐ " : "☑ ") + t.slice(2);
-          placeCaretAtEnd(div);
-        }
-      });
-
-      div.addEventListener("input", sync);
-      div.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const newLine = createLine();
-          div.after(newLine);
-          placeCaretAtStart(newLine);
-        }
-      });
-
-      noteContent.appendChild(div);
-      return div;
-    }
-
-    function sync() {
-      if (currentIndex === null) return;
-      const lines = [...noteContent.children]
-        .map(l => l.textContent)
-        .filter(l => l.trim() !== "");
-      notes[currentIndex].lines = lines;
-      save();
-      renderList();
-    }
-
-    function placeCaretAtEnd(el) {
-      const r = document.createRange();
-      const s = window.getSelection();
-      r.selectNodeContents(el);
-      r.collapse(false);
-      s.removeAllRanges();
-      s.addRange(r);
-    }
-
-    function placeCaretAtStart(el) {
-      const r = document.createRange();
-      const s = window.getSelection();
-      r.setStart(el, 0);
-      r.collapse(true);
-      s.removeAllRanges();
-      s.addRange(r);
-    }
-
-    document.getElementById("newLine").onclick = () => {
+  div.onkeydown = e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
       createLine();
-    };
-
-    document.getElementById("checkbox").onclick = () => {
-      const line = document.activeElement;
-      if (line && line.classList.contains("line")) {
-        if (!line.textContent.startsWith("☐ ") && !line.textContent.startsWith("☑ ")) {
-          line.textContent = "☐ " + line.textContent;
-          placeCaretAtEnd(line);
-          sync();
-        }
+    }
+    if (e.key === "Backspace" && div.textContent === "") {
+      const prev = div.previousElementSibling;
+      if (prev) {
+        e.preventDefault();
+        div.remove();
+        placeCaret(prev);
       }
-    };
-
-    // ✅ FIXED keyboard / toolbar overlap
-    function updateToolbarPosition() {
-      if (!window.visualViewport) return;
-      const vv = window.visualViewport;
-      const keyboardHeight =
-        window.innerHeight - vv.height - vv.offsetTop;
-      toolbar.style.bottom =
-        keyboardHeight > 0 ? keyboardHeight + "px" : "0px";
     }
+  };
 
-    window.visualViewport?.addEventListener("resize", updateToolbarPosition);
-    document.addEventListener("focusin", updateToolbarPosition);
-
-    if (notes.length === 0) {
-      notes.push({ lines: [] });
-      save();
+  div.onclick = e => {
+    if (e.target.classList.contains("checkbox")) {
+      e.target.textContent = e.target.textContent === "☐" ? "☑" : "☐";
     }
+  };
+}
 
-    renderList();
-    openNote(0);
-  </script>
+function rebindLines() {
+  document.querySelectorAll(".line").forEach(l => {
+    l.contentEditable = true;
+  });
+}
+
+/* ===== Formatting ===== */
+function setStyle(type) {
+  const sel = window.getSelection();
+  if (!sel.anchorNode) return;
+  const line = sel.anchorNode.closest(".line");
+  if (line) line.className = `line ${type}`;
+}
+
+function insertCheckbox() {
+  document.execCommand("insertHTML", false, `<span class="checkbox">☐</span> `);
+}
+
+/* ===== Caret ===== */
+function placeCaret(el) {
+  el.focus();
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  r.collapse(false);
+  const s = window.getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
+}
+
+/* ===== Auto Save ===== */
+function save() {
+  localStorage.setItem("notes", JSON.stringify(notes));
+}
+
+setInterval(() => {
+  if (currentNote !== null) {
+    notes[currentNote].content = editor.innerHTML;
+    notes[currentNote].preview =
+      editor.textContent.trim().split("\n")[0] || "";
+    save();
+  }
+}, 500);
+
+/* ===== Back gesture ===== */
+window.onpopstate = () => {
+  show("listScreen");
+  renderList();
+};
+</script>
+
 </body>
 </html>
