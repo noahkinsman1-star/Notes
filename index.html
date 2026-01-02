@@ -1,4 +1,3 @@
-<!-- redeploy -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +6,7 @@
 <title>1Notes</title>
 
 <link rel="manifest" href="manifest.json">
-  
+
 <style>
 body {
   margin: 0;
@@ -15,10 +14,28 @@ body {
   background: #fff;
 }
 
+/* Notes list */
+#notesList {
+  padding: 12px;
+  border-bottom: 1px solid #ddd;
+}
+
+.note-item {
+  padding: 10px;
+  border-radius: 8px;
+  background: #f5f5f5;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.note-item strong {
+  display: block;
+}
+
 /* Editor */
 #editor {
   padding: 16px;
-  padding-bottom: 90px;
+  padding-bottom: 100px;
 }
 
 .line {
@@ -40,6 +57,7 @@ body {
 .subtitle {
   font-size: 22px;
   font-weight: 600;
+  color: #000;
 }
 
 /* Toolbar */
@@ -72,9 +90,11 @@ body {
 
 <body>
 
+<div id="notesList"></div>
 <div id="editor"></div>
 
 <div class="toolbar" id="toolbar">
+  <button onclick="newNote()">＋</button>
   <button onclick="setLineStyle('title')">Title</button>
   <button onclick="setLineStyle('subtitle')">Subtitle</button>
   <button onclick="setLineStyle('normal')">Text</button>
@@ -88,12 +108,15 @@ body {
 <script>
 const editor = document.getElementById("editor");
 const toolbar = document.getElementById("toolbar");
+const notesList = document.getElementById("notesList");
+
+let notes = JSON.parse(localStorage.getItem("notes")) || [];
+let currentNoteId = null;
 let currentLine = null;
 
-/* ---------- Keyboard-aware toolbar ---------- */
+/* ---------- Toolbar position ---------- */
 function updateToolbarPosition() {
   if (!window.visualViewport) return;
-
   const keyboardHeight =
     window.innerHeight -
     window.visualViewport.height -
@@ -109,52 +132,111 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener("scroll", updateToolbarPosition);
 }
 
+/* ---------- Notes ---------- */
+function saveNotes() {
+  localStorage.setItem("notes", JSON.stringify(notes));
+}
+
+function saveOrDeleteCurrentNote() {
+  if (!currentNoteId) return;
+
+  const text = editor.innerText.trim();
+  const index = notes.findIndex(n => n.id === currentNoteId);
+
+  if (index === -1) return;
+
+  if (text === "") {
+    notes.splice(index, 1);
+  } else {
+    notes[index].content = editor.innerHTML;
+    notes[index].lastEdited = Date.now();
+  }
+
+  saveNotes();
+  renderNotesList();
+  currentNoteId = null;
+}
+
+function newNote() {
+  saveOrDeleteCurrentNote();
+
+  const id = Date.now().toString();
+  notes.push({ id, content: "", lastEdited: Date.now() });
+  currentNoteId = id;
+
+  editor.innerHTML = "";
+  createLine();
+  renderNotesList();
+}
+
+function openNote(id) {
+  saveOrDeleteCurrentNote();
+
+  const note = notes.find(n => n.id === id);
+  if (!note) return;
+
+  currentNoteId = id;
+  editor.innerHTML = note.content || "";
+  if (editor.innerHTML === "") createLine();
+}
+
+/* ---------- Notes list ---------- */
+function renderNotesList() {
+  notesList.innerHTML = "";
+
+  notes
+    .sort((a, b) => b.lastEdited - a.lastEdited)
+    .forEach(note => {
+      const div = document.createElement("div");
+      div.className = "note-item";
+
+      const preview = note.content
+        ? note.content.replace(/<[^>]+>/g, "").slice(0, 40)
+        : "New Note";
+
+      div.innerHTML = `<strong>${preview || "New Note"}</strong>`;
+      div.onclick = () => openNote(note.id);
+
+      notesList.appendChild(div);
+    });
+}
+
 /* ---------- Editor ---------- */
 function createLine(type = "normal", after = null) {
   const div = document.createElement("div");
   div.className = `line ${type}`;
   div.contentEditable = true;
 
-  if (after) {
-    editor.insertBefore(div, after.nextSibling);
-  } else {
-    editor.appendChild(div);
-  }
+  if (after) editor.insertBefore(div, after.nextSibling);
+  else editor.appendChild(div);
 
   currentLine = div;
   placeCaretAtEnd(div);
 
   div.addEventListener("focus", () => currentLine = div);
 
-  div.addEventListener("keydown", (e) => {
+  div.addEventListener("keydown", e => {
     if (e.key === "Enter") {
       e.preventDefault();
       createLine("normal", div);
     }
 
-    if (e.key === "Backspace") {
-      const sel = window.getSelection();
-      if (sel.anchorOffset === 0 && div.textContent === "") {
-        const prev = div.previousElementSibling;
-        if (prev) {
-          e.preventDefault();
-          div.remove();
-          currentLine = prev;
-          placeCaretAtEnd(prev);
-        }
+    if (e.key === "Backspace" && div.textContent === "") {
+      const prev = div.previousElementSibling;
+      if (prev) {
+        e.preventDefault();
+        div.remove();
+        placeCaretAtEnd(prev);
       }
     }
   });
 
-  /* Checkbox toggle (ONLY empty ☐ / filled ☑) */
   div.addEventListener("click", () => {
-    const text = div.textContent;
-
-    if (text.startsWith("☐ ")) {
-      div.textContent = "☑ " + text.slice(2);
+    if (div.textContent.startsWith("☐ ")) {
+      div.textContent = "☑ " + div.textContent.slice(2);
       placeCaretAtEnd(div);
-    } else if (text.startsWith("☑ ")) {
-      div.textContent = "☐ " + text.slice(2);
+    } else if (div.textContent.startsWith("☑ ")) {
+      div.textContent = "☐ " + div.textContent.slice(2);
       placeCaretAtEnd(div);
     }
   });
@@ -179,7 +261,6 @@ function insertCheckbox() {
   document.execCommand("insertText", false, "☐ ");
 }
 
-/* ---------- Caret ---------- */
 function placeCaretAtEnd(el) {
   el.focus();
   const range = document.createRange();
@@ -190,8 +271,9 @@ function placeCaretAtEnd(el) {
   sel.addRange(range);
 }
 
-/* Start */
-createLine();
+/* ---------- Start ---------- */
+renderNotesList();
+newNote();
 updateToolbarPosition();
 </script>
 
