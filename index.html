@@ -5,37 +5,53 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>1Notes</title>
 
-<link rel="manifest" href="manifest.json">
-
 <style>
+:root {
+  --bg: #ffffff;
+  --text: #000000;
+  --subtext: #444;
+  --toolbar: #f2f2f2;
+  --button: #e0e0e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --text: #ffffff;
+    --subtext: #cccccc;
+    --toolbar: #1e1e1e;
+    --button: #333333;
+  }
+}
+
 body {
   margin: 0;
   font-family: Arial, sans-serif;
-  background: #fff;
+  background: var(--bg);
+  color: var(--text);
 }
 
-/* Notes list */
-#notesList {
-  padding: 12px;
-  border-bottom: 1px solid #ddd;
+.hidden { display: none; }
+
+/* ---------- Notes List ---------- */
+#list {
+  padding: 16px;
 }
 
 .note-item {
-  padding: 10px;
-  border-radius: 8px;
-  background: #f5f5f5;
-  margin-bottom: 8px;
+  padding: 12px;
+  border-bottom: 1px solid #ddd;
   cursor: pointer;
 }
 
-.note-item strong {
-  display: block;
+.note-item small {
+  color: var(--subtext);
 }
 
-/* Editor */
+/* ---------- Editor ---------- */
 #editor {
   padding: 16px;
-  padding-bottom: 100px;
+  padding-bottom: 90px;
 }
 
 .line {
@@ -44,23 +60,11 @@ body {
   line-height: 1.35;
 }
 
-.normal {
-  font-size: 18px;
-  font-weight: 400;
-}
+.normal { font-size: 17px; }
+.title { font-size: 26px; font-weight: 700; }
+.subtitle { font-size: 20px; font-weight: 600; }
 
-.title {
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.subtitle {
-  font-size: 22px;
-  font-weight: 600;
-  color: #000;
-}
-
-/* Toolbar */
+/* ---------- Toolbar ---------- */
 .toolbar {
   position: fixed;
   left: 0;
@@ -68,21 +72,20 @@ body {
   display: flex;
   gap: 6px;
   padding: 8px;
-  background: #f2f2f2;
-  border-top: 1px solid #ddd;
+  background: var(--toolbar);
+  border-top: 1px solid #ccc;
   z-index: 100;
 }
 
 .toolbar button {
   padding: 6px 10px;
-  font-size: 14px;
   border: none;
   border-radius: 6px;
-  background: #e0e0e0;
+  background: var(--button);
+  color: var(--text);
 }
 
 .toolbar button:active {
-  background: #cfcfcf;
   transform: scale(0.95);
 }
 </style>
@@ -90,191 +93,131 @@ body {
 
 <body>
 
-<div id="notesList"></div>
-<div id="editor"></div>
+<div id="list"></div>
 
-<div class="toolbar" id="toolbar">
-  <button onclick="newNote()">＋</button>
-  <button onclick="setLineStyle('title')">Title</button>
-  <button onclick="setLineStyle('subtitle')">Subtitle</button>
-  <button onclick="setLineStyle('normal')">Text</button>
-  <button onclick="formatText('bold')"><b>B</b></button>
-  <button onclick="formatText('italic')"><i>I</i></button>
-  <button onclick="formatText('underline')"><u>U</u></button>
-  <button onclick="insertBullet()">•</button>
+<div id="editorScreen" class="hidden">
+  <div id="editor"></div>
+</div>
+
+<div class="toolbar hidden" id="toolbar">
+  <button onclick="setLine('title')">Title</button>
+  <button onclick="setLine('subtitle')">Subtitle</button>
+  <button onclick="setLine('normal')">Text</button>
+  <button onclick="cmd('bold')"><b>B</b></button>
+  <button onclick="cmd('italic')"><i>I</i></button>
+  <button onclick="cmd('underline')"><u>U</u></button>
+  <button onclick="cmd('insertUnorderedList')">•</button>
   <button onclick="insertCheckbox()">☐</button>
 </div>
 
 <script>
+let notes = JSON.parse(localStorage.getItem("notes") || "[]");
+let currentId = null;
+const list = document.getElementById("list");
 const editor = document.getElementById("editor");
+const screen = document.getElementById("editorScreen");
 const toolbar = document.getElementById("toolbar");
-const notesList = document.getElementById("notesList");
 
-let notes = JSON.parse(localStorage.getItem("notes")) || [];
-let currentNoteId = null;
-let currentLine = null;
-
-/* ---------- Toolbar position ---------- */
-function updateToolbarPosition() {
-  if (!window.visualViewport) return;
-  const keyboardHeight =
-    window.innerHeight -
-    window.visualViewport.height -
-    window.visualViewport.offsetTop;
-
-  toolbar.style.bottom = keyboardHeight > 100
-    ? keyboardHeight + "px"
-    : "0px";
-}
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", updateToolbarPosition);
-  window.visualViewport.addEventListener("scroll", updateToolbarPosition);
-}
-
-/* ---------- Notes ---------- */
-function saveNotes() {
+/* ---------- Save ---------- */
+function save() {
   localStorage.setItem("notes", JSON.stringify(notes));
 }
 
-function saveOrDeleteCurrentNote() {
-  if (!currentNoteId) return;
-
-  const text = editor.innerText.trim();
-  const index = notes.findIndex(n => n.id === currentNoteId);
-
-  if (index === -1) return;
-
-  if (text === "") {
-    notes.splice(index, 1);
-  } else {
-    notes[index].content = editor.innerHTML;
-    notes[index].lastEdited = Date.now();
-  }
-
-  saveNotes();
-  renderNotesList();
-  currentNoteId = null;
-}
-
-function newNote() {
-  saveOrDeleteCurrentNote();
-
-  const id = Date.now().toString();
-  notes.push({ id, content: "", lastEdited: Date.now() });
-  currentNoteId = id;
-
-  editor.innerHTML = "";
-  createLine();
-  renderNotesList();
-}
-
-function openNote(id) {
-  saveOrDeleteCurrentNote();
-
-  const note = notes.find(n => n.id === id);
-  if (!note) return;
-
-  currentNoteId = id;
-  editor.innerHTML = note.content || "";
-  if (editor.innerHTML === "") createLine();
-}
-
-/* ---------- Notes list ---------- */
-function renderNotesList() {
-  notesList.innerHTML = "";
-
-  notes
-    .sort((a, b) => b.lastEdited - a.lastEdited)
-    .forEach(note => {
-      const div = document.createElement("div");
-      div.className = "note-item";
-
-      const preview = note.content
-        ? note.content.replace(/<[^>]+>/g, "").slice(0, 40)
-        : "New Note";
-
-      div.innerHTML = `<strong>${preview || "New Note"}</strong>`;
-      div.onclick = () => openNote(note.id);
-
-      notesList.appendChild(div);
-    });
+/* ---------- List ---------- */
+function showList() {
+  list.innerHTML = "";
+  notes.sort((a,b)=>b.updated-a.updated);
+  notes.forEach(n=>{
+    const d = document.createElement("div");
+    d.className = "note-item";
+    d.innerHTML = `<strong>${n.text.split("\n")[0] || "New Note"}</strong><br><small>${new Date(n.updated).toLocaleString()}</small>`;
+    d.onclick = ()=>openNote(n.id);
+    list.appendChild(d);
+  });
 }
 
 /* ---------- Editor ---------- */
-function createLine(type = "normal", after = null) {
-  const div = document.createElement("div");
-  div.className = `line ${type}`;
-  div.contentEditable = true;
+function openNote(id=null) {
+  screen.classList.remove("hidden");
+  toolbar.classList.remove("hidden");
+  list.classList.add("hidden");
 
-  if (after) editor.insertBefore(div, after.nextSibling);
-  else editor.appendChild(div);
+  if (!id) {
+    id = Date.now();
+    notes.push({id, text:"", updated:Date.now()});
+  }
 
-  currentLine = div;
-  placeCaretAtEnd(div);
+  currentId = id;
+  editor.innerHTML = "";
+  const note = notes.find(n=>n.id===id);
 
-  div.addEventListener("focus", () => currentLine = div);
+  note.text.split("\n").forEach(t=>addLine("normal",t));
+}
 
-  div.addEventListener("keydown", e => {
-    if (e.key === "Enter") {
+function addLine(type,text="") {
+  const d = document.createElement("div");
+  d.className = `line ${type}`;
+  d.contentEditable = true;
+  d.textContent = text;
+  editor.appendChild(d);
+
+  d.addEventListener("keydown",e=>{
+    if (e.key==="Enter") {
       e.preventDefault();
-      createLine("normal", div);
+      addLine("normal","");
+      placeCaret(editor.lastChild);
     }
-
-    if (e.key === "Backspace" && div.textContent === "") {
-      const prev = div.previousElementSibling;
-      if (prev) {
-        e.preventDefault();
-        div.remove();
-        placeCaretAtEnd(prev);
-      }
+    if (e.key==="Backspace" && d.textContent==="") {
+      const p=d.previousElementSibling;
+      if(p){e.preventDefault();d.remove();placeCaret(p);}
     }
+    autoSave();
   });
 
-  div.addEventListener("click", () => {
-    if (div.textContent.startsWith("☐ ")) {
-      div.textContent = "☑ " + div.textContent.slice(2);
-      placeCaretAtEnd(div);
-    } else if (div.textContent.startsWith("☑ ")) {
-      div.textContent = "☐ " + div.textContent.slice(2);
-      placeCaretAtEnd(div);
-    }
-  });
+  d.onclick=()=>{
+    if(d.textContent.startsWith("☐ "))d.textContent="☑ "+d.textContent.slice(2);
+    else if(d.textContent.startsWith("☑ "))d.textContent="☐ "+d.textContent.slice(2);
+  };
+}
+
+function autoSave() {
+  const note = notes.find(n=>n.id===currentId);
+  note.text = [...editor.children].map(l=>l.textContent).join("\n");
+  note.updated = Date.now();
+
+  if (!note.text.trim()) {
+    notes = notes.filter(n=>n.id!==currentId);
+    back();
+  }
+  save();
+}
+
+function back() {
+  screen.classList.add("hidden");
+  toolbar.classList.add("hidden");
+  list.classList.remove("hidden");
+  showList();
 }
 
 /* ---------- Formatting ---------- */
-function setLineStyle(type) {
-  if (!currentLine) return;
-  currentLine.className = `line ${type}`;
-  currentLine.focus();
+function setLine(type){
+  document.activeElement.className=`line ${type}`;
 }
+function cmd(c){document.execCommand(c);}
+function insertCheckbox(){document.execCommand("insertText",false,"☐ ");}
 
-function formatText(cmd) {
-  document.execCommand(cmd);
-}
-
-function insertBullet() {
-  document.execCommand("insertUnorderedList");
-}
-
-function insertCheckbox() {
-  document.execCommand("insertText", false, "☐ ");
-}
-
-function placeCaretAtEnd(el) {
-  el.focus();
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  range.collapse(false);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
+/* ---------- Caret ---------- */
+function placeCaret(el){
+  const r=document.createRange();
+  r.selectNodeContents(el);
+  r.collapse(false);
+  const s=window.getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
 }
 
 /* ---------- Start ---------- */
-renderNotesList();
-newNote();
-updateToolbarPosition();
+showList();
 </script>
 
 </body>
