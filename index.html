@@ -6,52 +6,16 @@
 <title>1Notes</title>
 
 <style>
-:root {
-  --bg: #ffffff;
-  --text: #000000;
-  --subtext: #444;
-  --toolbar: #f2f2f2;
-  --button: #e0e0e0;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121212;
-    --text: #ffffff;
-    --subtext: #cccccc;
-    --toolbar: #1e1e1e;
-    --button: #333333;
-  }
-}
-
 body {
   margin: 0;
   font-family: Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  background: #ffffff;
 }
 
-.hidden { display: none; }
-
-/* ---------- Notes List ---------- */
-#list {
-  padding: 16px;
-}
-
-.note-item {
-  padding: 12px;
-  border-bottom: 1px solid #ddd;
-  cursor: pointer;
-}
-
-.note-item small {
-  color: var(--subtext);
-}
-
-/* ---------- Editor ---------- */
+/* Editor */
 #editor {
   padding: 16px;
-  padding-bottom: 90px;
+  padding-bottom: 100px;
 }
 
 .line {
@@ -60,32 +24,45 @@ body {
   line-height: 1.35;
 }
 
-.normal { font-size: 17px; }
-.title { font-size: 26px; font-weight: 700; }
-.subtitle { font-size: 20px; font-weight: 600; }
+.title {
+  font-size: 26px;
+  font-weight: 700;
+}
 
-/* ---------- Toolbar ---------- */
+.subtitle {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.normal {
+  font-size: 18px;
+  font-weight: 400;
+}
+
+/* Toolbar */
 .toolbar {
   position: fixed;
   left: 0;
+  bottom: 0;
   width: 100%;
   display: flex;
   gap: 6px;
   padding: 8px;
-  background: var(--toolbar);
-  border-top: 1px solid #ccc;
-  z-index: 100;
+  background: #f2f2f2;
+  border-top: 1px solid #ddd;
+  z-index: 999;
 }
 
 .toolbar button {
   padding: 6px 10px;
+  font-size: 14px;
   border: none;
   border-radius: 6px;
-  background: var(--button);
-  color: var(--text);
+  background: #e0e0e0;
 }
 
 .toolbar button:active {
+  background: #cfcfcf;
   transform: scale(0.95);
 }
 </style>
@@ -93,135 +70,136 @@ body {
 
 <body>
 
-<div id="list"></div>
+<div id="editor"></div>
 
-<div id="editorScreen" class="hidden">
-  <div id="editor"></div>
-</div>
-
-<div class="toolbar hidden" id="toolbar">
-  <button onclick="setLine('title')">Title</button>
-  <button onclick="setLine('subtitle')">Subtitle</button>
-  <button onclick="setLine('normal')">Text</button>
-  <button onclick="cmd('bold')"><b>B</b></button>
-  <button onclick="cmd('italic')"><i>I</i></button>
-  <button onclick="cmd('underline')"><u>U</u></button>
-  <button onclick="cmd('insertUnorderedList')">•</button>
+<div class="toolbar" id="toolbar">
+  <button onclick="setLineStyle('title')">Title</button>
+  <button onclick="setLineStyle('subtitle')">Subtitle</button>
+  <button onclick="setLineStyle('normal')">Text</button>
+  <button onclick="formatText('bold')"><b>B</b></button>
+  <button onclick="formatText('italic')"><i>I</i></button>
+  <button onclick="formatText('underline')"><u>U</u></button>
+  <button onclick="insertBullet()">•</button>
   <button onclick="insertCheckbox()">☐</button>
 </div>
 
 <script>
-let notes = JSON.parse(localStorage.getItem("notes") || "[]");
-let currentId = null;
-const list = document.getElementById("list");
 const editor = document.getElementById("editor");
-const screen = document.getElementById("editorScreen");
 const toolbar = document.getElementById("toolbar");
+let currentLine = null;
 
-/* ---------- Save ---------- */
-function save() {
-  localStorage.setItem("notes", JSON.stringify(notes));
+/* ---------- Toolbar follows keyboard ---------- */
+function updateToolbarPosition() {
+  if (!window.visualViewport) return;
+
+  const keyboardHeight =
+    window.innerHeight -
+    window.visualViewport.height -
+    window.visualViewport.offsetTop;
+
+  toolbar.style.bottom = keyboardHeight > 100
+    ? keyboardHeight + "px"
+    : "0px";
 }
 
-/* ---------- List ---------- */
-function showList() {
-  list.innerHTML = "";
-  notes.sort((a,b)=>b.updated-a.updated);
-  notes.forEach(n=>{
-    const d = document.createElement("div");
-    d.className = "note-item";
-    d.innerHTML = `<strong>${n.text.split("\n")[0] || "New Note"}</strong><br><small>${new Date(n.updated).toLocaleString()}</small>`;
-    d.onclick = ()=>openNote(n.id);
-    list.appendChild(d);
-  });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", updateToolbarPosition);
+  window.visualViewport.addEventListener("scroll", updateToolbarPosition);
 }
 
-/* ---------- Editor ---------- */
-function openNote(id=null) {
-  screen.classList.remove("hidden");
-  toolbar.classList.remove("hidden");
-  list.classList.add("hidden");
+/* ---------- Create a line ---------- */
+function createLine(type = "normal", after = null) {
+  const div = document.createElement("div");
+  div.className = `line ${type}`;
+  div.contentEditable = "true";
+  div.setAttribute("spellcheck", "true");
 
-  if (!id) {
-    id = Date.now();
-    notes.push({id, text:"", updated:Date.now()});
+  if (after) {
+    editor.insertBefore(div, after.nextSibling);
+  } else {
+    editor.appendChild(div);
   }
 
-  currentId = id;
-  editor.innerHTML = "";
-  const note = notes.find(n=>n.id===id);
+  currentLine = div;
+  placeCaretAtEnd(div);
 
-  note.text.split("\n").forEach(t=>addLine("normal",t));
-}
+  div.addEventListener("focus", () => currentLine = div);
 
-function addLine(type,text="") {
-  const d = document.createElement("div");
-  d.className = `line ${type}`;
-  d.contentEditable = true;
-  d.textContent = text;
-  editor.appendChild(d);
-
-  d.addEventListener("keydown",e=>{
-    if (e.key==="Enter") {
+  div.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
       e.preventDefault();
-      addLine("normal","");
-      placeCaret(editor.lastChild);
+      createLine("normal", div);
     }
-    if (e.key==="Backspace" && d.textContent==="") {
-      const p=d.previousElementSibling;
-      if(p){e.preventDefault();d.remove();placeCaret(p);}
+
+    if (e.key === "Backspace" && div.textContent === "") {
+      const prev = div.previousElementSibling;
+      if (prev) {
+        e.preventDefault();
+        div.remove();
+        currentLine = prev;
+        placeCaretAtEnd(prev);
+      }
     }
-    autoSave();
   });
 
-  d.onclick=()=>{
-    if(d.textContent.startsWith("☐ "))d.textContent="☑ "+d.textContent.slice(2);
-    else if(d.textContent.startsWith("☑ "))d.textContent="☐ "+d.textContent.slice(2);
-  };
-}
-
-function autoSave() {
-  const note = notes.find(n=>n.id===currentId);
-  note.text = [...editor.children].map(l=>l.textContent).join("\n");
-  note.updated = Date.now();
-
-  if (!note.text.trim()) {
-    notes = notes.filter(n=>n.id!==currentId);
-    back();
-  }
-  save();
-}
-
-function back() {
-  screen.classList.add("hidden");
-  toolbar.classList.add("hidden");
-  list.classList.remove("hidden");
-  showList();
+  div.addEventListener("click", () => {
+    const text = div.textContent;
+    if (text.startsWith("☐ ")) {
+      div.textContent = "☑ " + text.slice(2);
+      placeCaretAtEnd(div);
+    } else if (text.startsWith("☑ ")) {
+      div.textContent = "☐ " + text.slice(2);
+      placeCaretAtEnd(div);
+    }
+  });
 }
 
 /* ---------- Formatting ---------- */
-function setLine(type){
-  document.activeElement.className=`line ${type}`;
+function setLineStyle(type) {
+  if (!currentLine) return;
+  currentLine.className = `line ${type}`;
+  currentLine.focus();
 }
-function cmd(c){document.execCommand(c);}
-function insertCheckbox(){document.execCommand("insertText",false,"☐ ");}
+
+function formatText(cmd) {
+  document.execCommand(cmd);
+}
+
+function insertBullet() {
+  document.execCommand("insertUnorderedList");
+}
+
+function insertCheckbox() {
+  document.execCommand("insertText", false, "☐ ");
+}
 
 /* ---------- Caret ---------- */
-function placeCaret(el){
-  const r=document.createRange();
-  r.selectNodeContents(el);
-  r.collapse(false);
-  const s=window.getSelection();
-  s.removeAllRanges();
-  s.addRange(r);
+function placeCaretAtEnd(el) {
+  el.focus();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
-/* ---------- Start ---------- */
-showList();
-window.onload = () => {
-  createLine("normal");
+/* ---------- START APP ---------- */
+window.addEventListener("load", () => {
+  const firstLine = document.createElement("div");
+  firstLine.className = "line normal";
+  firstLine.contentEditable = "true";
+  firstLine.setAttribute("spellcheck", "true");
+
+  editor.appendChild(firstLine);
+  currentLine = firstLine;
+
+  setTimeout(() => {
+    placeCaretAtEnd(firstLine);
+  }, 50);
+
   updateToolbarPosition();
-};
+});
 </script>
 
 </body>
